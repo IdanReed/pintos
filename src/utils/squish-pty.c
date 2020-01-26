@@ -234,6 +234,7 @@ relay (int pty, int dead_child_fd)
 
         p->size = n = read (p->in, p->buf, sizeof p->buf);
         if (n <= 0)
+
           return;
       }
 }
@@ -275,6 +276,7 @@ main (int argc __attribute__ ((unused)), char *argv[])
   if (unlockpt (master) < 0)
     fail_io ("unlockpt");
 
+
   /* Open slave side of pty. */
   name = ptsname (master);
   if (name == NULL)
@@ -283,14 +285,15 @@ main (int argc __attribute__ ((unused)), char *argv[])
   if (slave < 0)
     fail_io ("open \"%s\"", name);
 
+
   /* System V implementations need STREAMS configuration for the
      slave. */
-  if (isastream (slave))
-    {
-      if (ioctl (slave, I_PUSH, "ptem") < 0
-          || ioctl (slave, I_PUSH, "ldterm") < 0)
-        fail_io ("ioctl");
-    }
+//   if (isastream (slave))
+//     {
+//       if (ioctl (slave, I_PUSH, "ptem") < 0
+//           || ioctl (slave, I_PUSH, "ldterm") < 0)
+//         fail_io ("ioctl");
+//     }
 
   /* Arrange to get notified when a child dies, by writing a byte
      to a pipe fd.  We really want to use pselect() and
