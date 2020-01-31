@@ -1,18 +1,11 @@
 #! /bin/sh
 
 # Path to GDB macros file.  Customize for your site.
-GDBMACROS=/home/idanreed/pintos/src/misc/gbd-macros
-
-# Choose correct GDB.
-if command -v i386-elf-gdb >/dev/null 2>&1; then
-	GDB=i386-elf-gdb
-else
-	GDB=gdb
-fi
-
-# Run GDB.
+GDBMACROS=/home/idanreed/pintos/src/misc/gdb-macros
+GDB=gdb
 if test -f "$GDBMACROS"; then
-	exec $GDB -x "$GDBMACROS" "$@"
+	exec $GDB -x "$GDBMACROS" "$@" --command=/home/idanreed/pintos/src/utils/gdb-cmds 
+	#--args "set architecture i386:x86-64"
 else
 	echo "*** $GDBMACROS does not exist ***"
 	echo "*** Pintos GDB macros will not be available ***"
