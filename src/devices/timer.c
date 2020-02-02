@@ -3,11 +3,13 @@
 #include <inttypes.h>
 #include <round.h>
 #include <stdio.h>
+#include <list.h>
 #include "devices/pit.h"
 #include "threads/interrupt.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
-  
+#include "threads/malloc.h"
+
 /* See [8254] for hardware details of the 8254 timer chip. */
 
 #if TIMER_FREQ < 19
@@ -30,11 +32,30 @@ static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
 
-/* Sets up the timer to interrupt TIMER_FREQ times per second,
-   and registers the corresponding interrupt. */
+/*  List of sleeping threads. */
+static struct list timed_thread_list;
+
+struct timed_thread
+  {
+    struct list_elem elem;
+    struct thread * waiting_thread;
+    int64_t ready_tick;
+  };
+
+static bool compare_timed_threads(
+    const struct list_elem *a, 
+    const struct list_elem *b,
+    void *aux);
+
+static void ready_timed_threads (void);
+static void waitlist_thread (int64_t start_tick, int64_t delay_ticks);
+
+/*  Sets up the timer to interrupt TIMER_FREQ times per second,
+    and registers the corresponding interrupt. */
 void
 timer_init (void) 
 {
+  list_init (&timed_thread_list);
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
 }
@@ -87,13 +108,18 @@ timer_elapsed (int64_t then)
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void
-timer_sleep (int64_t ticks) 
+timer_sleep (int64_t tick_delay) 
 {
+  
   int64_t start = timer_ticks ();
-
+  
+  /*
   ASSERT (intr_get_level () == INTR_ON);
   while (timer_elapsed (start) < ticks) 
     thread_yield ();
+  */
+
+  waitlist_thread(start, tick_delay);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -171,6 +197,7 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
+  ready_timed_threads();
   thread_tick ();
 }
 
@@ -244,3 +271,79 @@ real_time_delay (int64_t num, int32_t denom)
   ASSERT (denom % 1000 == 0);
   busy_wait (loops_per_tick * num / 1000 * TIMER_FREQ / (denom / 1000)); 
 }
+
+static bool 
+compare_timed_threads(
+  const struct list_elem *a, 
+  const struct list_elem *b,
+  void *aux
+)
+{
+  (void)aux;
+  struct timed_thread * thread_a = list_entry (a, struct timed_thread, elem);
+  struct timed_thread * thread_b = list_entry (b, struct timed_thread, elem);
+  
+  return (thread_a->ready_tick < thread_b->ready_tick);
+}
+
+static void 
+ready_timed_threads (void)
+{
+  while(!list_empty (&timed_thread_list))
+  {
+    struct timed_thread * first_timed_thread = 
+      list_entry (
+	list_pop_front (&timed_thread_list),
+	struct timed_thread,
+	elem
+      );
+ 
+    if(first_timed_thread->ready_tick <= ticks)
+    {
+      #ifdef TIMER_DEBUG
+      printf ("Unblocking thread: %p\n", first_timed_thread->waiting_thread);
+      printf ("\tReady tick: %d\n", (int)first_timed_thread->ready_tick);
+      printf ("\tCur tick: %d\n", (int)ticks);
+      #endif
+      thread_unblock (first_timed_thread->waiting_thread);
+    }
+    else
+    {
+      list_push_front (&timed_thread_list, &(first_timed_thread->elem));
+      break; 
+    }
+  }
+}
+
+static void 
+waitlist_thread (int64_t start_tick, int64_t delay_ticks)
+{
+ 
+  enum intr_level old_intr_level = intr_disable ();
+  struct timed_thread * new_waiting_thread = malloc (sizeof(struct timed_thread));
+  
+  new_waiting_thread->waiting_thread = thread_current();
+  new_waiting_thread->ready_tick = start_tick + delay_ticks;
+  list_insert_ordered (&timed_thread_list, &(new_waiting_thread->elem), compare_timed_threads, (void *) NULL);
+
+  #ifdef TIMER_DEBUG
+  printf ("Waitlisting thread: %p\n", new_waiting_thread->waiting_thread);
+  printf ("\tStart tick: %d\n", (int)start_tick);
+  printf ("\tDelay ticks: %d\n", (int)delay_ticks);
+  printf ("\tReady tick: %d\n", (int)new_waiting_thread->ready_tick);
+  #endif
+
+  thread_block ();
+  intr_set_level (old_intr_level);
+}
+
+
+
+
+
+
+
+
+
+
+
