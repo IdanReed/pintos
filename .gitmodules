@@ -1,3 +1,0 @@
-[submodule "pintos_src"]
-	path = pintos_src
-	url = https://github.com/IdanReed/pintos_src.git
